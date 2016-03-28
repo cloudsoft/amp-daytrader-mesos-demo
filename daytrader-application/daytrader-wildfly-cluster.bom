@@ -16,7 +16,7 @@ brooklyn.catalog:
   version: 0.1.0
   items:
   - id: daytrader-wildfly-postgresql-cluster
-    name: Daytrader App Cluster (Wildfly10/asdjhgajhskdgaskd)
+    name: Daytrader App Cluster (Wildfly10/PostgreSQL)
     description: |
       Daytrader 3 performance benchmarking app
     iconUrl: "https://s3.amazonaws.com/amp-daytrader-mesos-demo/daytrader/img/daytrader_app.png"
