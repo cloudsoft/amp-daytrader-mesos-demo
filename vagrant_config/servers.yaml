@@ -1,0 +1,36 @@
+---
+default_config:
+    check_newer_vagrant_box: false
+    run_os_update: false
+servers:
+  - name: amp-pro
+    box: ubuntu/wily64
+    ram: 2048
+    cpus: 4
+    forwarded_ports:
+     - guest: 8081
+       host: 8081
+    shell:
+      env:
+        AMP_PRO_VERSION: 3.1.0-20160327.1622
+      cmd:
+        - sudo systemctl restart rsyslog
+        - cp /vagrant/my_keys/* ~/.ssh/
+        - chmod -R 600 ~/.ssh/*
+        - sudo sh -c 'export DEBIAN_FRONTEND=noninteractive; apt-get install --yes openjdk-8-jre-headless'
+        - sudo sed -i '/assistive_technologies/ s/^#*/#/' /etc/java-8-openjdk/accessibility.properties
+        - sudo mkdir -p /var/log/amp-pro
+        - sudo chown vagrant:vagrant /var/log/amp-pro
+        - curl -o cloudsoft-amp-pro.tar.gz -s -S http://developers.cloudsoftcorp.com/amp-pro/amp-pro-dist-${AMP_PRO_VERSION}-dist.tar.gz
+        - tar zxf cloudsoft-amp-pro.tar.gz
+        - mv cloudsoft-amp-pro-${AMP_PRO_VERSION} cloudsoft-amp-pro
+        - ln -s /var/log/amp-pro /home/vagrant/cloudsoft-amp-pro/logs
+        - cp /vagrant/vagrant_config/files/logback.xml /home/vagrant/cloudsoft-amp-pro/conf/
+        - sudo cp /vagrant/vagrant_config/files/amp-pro.service /etc/systemd/system/amp-pro.service
+        - sudo cp /vagrant/vagrant_config/files/motd /etc/motd
+        - mkdir -p /home/vagrant/.brooklyn
+        - cp /vagrant/vagrant_config/files/brooklyn.properties /home/vagrant/.brooklyn/
+        - chmod 600 /home/vagrant/.brooklyn/brooklyn.properties
+        - sudo systemctl start amp-pro
+        - sudo systemctl enable amp-pro
+...

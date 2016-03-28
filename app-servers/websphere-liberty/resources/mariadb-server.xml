@@ -1,0 +1,98 @@
+<server>
+    <featureManager>
+        <feature>ejbLite-3.1</feature>
+        <feature>jsf-2.0</feature>
+        <feature>jaxrs-1.1</feature>
+        <feature>jpa-2.0</feature>
+        <feature>jmsMdb-3.1</feature>
+        <feature>wasJmsServer-1.0</feature>
+        <feature>wasJmsClient-1.1</feature>
+        <feature>restConnector-1.0</feature>
+        <feature>monitor-1.0</feature>
+    </featureManager>
+
+    <httpEndpoint httpPort="{http_port}" httpsPort="{https_port}" id="defaultHttpEndpoint" host="*"/>
+	<keyStore location="{certificate_location}" password="{certificate_password}" type="PKCS12" />
+	<basicRegistry>
+		<user name="{was_user}" password="{was_password}"/>
+	</basicRegistry>
+	<administrator-role>
+		<user>wasadmin</user>
+	</administrator-role>
+
+	<executor name="LargeThreadPool" id="default" coreThreads="40" maxThreads="50" keepAlive="60s" stealPolicy="LOCAL" rejectedWorkPolicy="CALLER_RUNS" />
+
+	<connectionManager id="conMgr1" agedTimeout="-1" connectionTimeout="0" maxIdleTime="-1" maxPoolSize="70" minPoolSize="70" purgePolicy="FailingConnectionOnly" reapTime="-1"/> 
+	<connectionManager id="conMgr2" agedTimeout="-1" connectionTimeout="0" maxIdleTime="-1" maxPoolSize="50" minPoolSize="10" purgePolicy="FailingConnectionOnly" reapTime="-1"/>
+
+
+	<authData id="TradeDataSourceAuthData" user="{database_username}" password="{database_password}"/>
+	<authData id="TradeAdminAuthData" user="{database_username}" password="{database_password}"/>
+
+	<dataSource id="TradeDataSource" transactional="false" jdbcDriverRef='mysql-driver' jndiName="jdbc/TradeDataSource">
+        <properties databaseName="{database_dbname}" user="{database_username}" password="{database_password}" serverName="{database_host}" portNumber="{database_port}"/>
+    </dataSource>
+
+	<dataSource id="NoTxTradeDataSource" transactional="false" jdbcDriverRef='mysql-driver' jndiName="jdbc/NoTxTradeDataSource">
+        <properties databaseName="{database_dbname}" user="{database_username}" password="{database_password}" serverName="{database_host}" portNumber="{database_port}"/>
+    </dataSource>
+
+	<jdbcDriver id='mysql-driver' 
+            javax.sql.XADataSource='org.mariadb.jdbc.MySQLDataSource'
+            javax.sql.ConnectionPoolDataSource='org.mariadb.jdbc.MySQLDataSource'  
+            libraryRef='MySQLLib'/>
+
+    <library id="MySQLLib">
+        <fileset dir="{database_driver_directory}" includes="mariadb-java-client.jar"/>
+    </library>
+
+<!--
+	<dataSource jndiName="jdbc/TradeDataSource" jdbcDriverRef="DerbyEmbedded" id="TradeDataSource" connectionManagerRef="conMgr1" statementCacheSize="60" isolationLevel="TRANSACTION_READ_COMMITTED"> 
+		<properties.derby.embedded
+            databaseName="${shared.resource.dir}/data/tradedb"
+            createDatabase="create"
+            user="db_username" 
+            password="db_password"
+      /> 
+	</dataSource>
+
+	<dataSource jndiName="jdbc/NoTxTradeDataSource" jdbcDriverRef="DerbyEmbedded" id="NoTxTradeDataSource" transactional="false" connectionManagerRef="conMgr2" statementCacheSize="10" isolationLevel="TRANSACTION_READ_COMMITTED"> 
+		<properties.derby.embedded
+            databaseName="${shared.resource.dir}/data/tradedb"
+            createDatabase="create"
+            user="db_username" 
+            password="db_password"
+      /> 
+	</dataSource>-->
+
+	<messagingEngine id="defaultME">
+		<queue id="TradeBrokerQueue" />
+		<topicSpace id="TradeTopicSpace" />
+	</messagingEngine>
+
+	<jmsQueueConnectionFactory jndiName="jms/TradeBrokerQCF" connectionManagerRef="ConMgr3">  
+		<properties.wasJms />
+	</jmsQueueConnectionFactory> 
+	<connectionManager id="ConMgr3" maxPoolSize="20"/>
+
+	<jmsTopicConnectionFactory jndiName="jms/TradeStreamerTCF" connectionManagerRef="ConMgr4">
+		<properties.wasJms />
+	</jmsTopicConnectionFactory>
+	<connectionManager id="ConMgr4" maxPoolSize="20"/>
+
+	<jmsQueue id="jms/TradeBrokerQueue" jndiName="jms/TradeBrokerQueue">
+		<properties.wasJms queueName="TradeBrokerQueue" deliveryMode="NonPersistent" />
+	</jmsQueue>
+
+	<jmsTopic id="jms/TradeStreamerTopic" jndiName="jms/TradeStreamerTopic">
+		<properties.wasJms topicSpace="TradeTopicSpace" deliveryMode="NonPersistent" />
+	</jmsTopic>
+
+	<jmsActivationSpec id="eis/TradeBrokerMDB" >
+		<properties.wasJms destinationRef="jms/TradeBrokerQueue" />
+	</jmsActivationSpec>
+
+	<jmsActivationSpec id="eis/TradeStreamerMDB" >
+		<properties.wasJms destinationRef="jms/TradeStreamerTopic" destinationType="javax.jms.Topic" />
+	</jmsActivationSpec>
+</server>

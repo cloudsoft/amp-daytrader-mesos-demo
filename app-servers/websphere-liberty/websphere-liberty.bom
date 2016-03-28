@@ -1,0 +1,235 @@
+# Copyright 2016 by Cloudsoft Corporation Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# - http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+brooklyn.catalog:
+  version: 0.1.0
+  items:
+  - id: websphereLiberty
+    name: WebSphere Liberty
+    item:
+      type: org.apache.brooklyn.entity.software.base.VanillaSoftwareProcess
+    
+      brooklyn.config:
+        docker.container.openPorts:
+        - 22
+        - $brooklyn:config("http.port")
+        - $brooklyn:config("https.port")
+        admin.username: wasadmin
+        admin.password: password
+        liberty.archive.url:
+        application.archive.url: "https://s3.amazonaws.com/amp-daytrader-mesos-demo/daytrader/ear/daytrader3-ee6.ear"
+        keystore.url: "https://s3.amazonaws.com/amp-daytrader-mesos-demo/websphere-liberty/certs/cert.pfx"
+        keystore.password: password
+        http.port: 9080
+        https.port: 9443
+        java.version.required: 7
+        management.bind.address: 127.0.0.1
+        port.offset: 0
+        public.bind.address: 0.0.0.0
+        unsecure.bind.address: 127.0.0.1
+        websphere.deploy.ear.context: daytrader
+        websphere.application.name: daytrader3
+        database.hostAndPort:
+        database.dbname: database
+        database.username: user
+        database.password: password
+        wsl.mariadb.client.version: 1.3.5
+        wsl.mariadb.enabled: false
+        wsl.postgresql.client.version: 9.4.1208.jre7
+        wsl.postgresql.enabled: false
+
+      shell.env:
+        ADMIN_USERNAME: $brooklyn:config("admin.username")
+        ADMIN_PASSWORD: $brooklyn:config("admin.password")
+        LIBERTY_ARCHIVE_URL: $brooklyn:config("liberty.archive.url")
+        APPLICATION_ARCHIVE_URL: $brooklyn:config("application.archive.url")
+        KEYSTORE_URL: $brooklyn:config("keystore.url")
+        KEYSTORE_PASSWORD: $brooklyn:config("keystore.password")
+        HTTP_PORT: $brooklyn:config("http.port")
+        HTTPS_PORT: $brooklyn:config("https.port")
+        JAVA_VERSION_REQUIRED: $brooklyn:config("java.version.required")
+        MANAGEMENT_BIND_ADDRESS: $brooklyn:config("management.bind.address")
+        PUBLIC_BIND_ADDRESS: $brooklyn:config("public.bind.address")
+        INSTALL_DIR: $brooklyn:attributeWhenReady("install.dir")
+        WEBSPHERE_HOST: $brooklyn:attributeWhenReady("host.address")
+        WEBSPHERE_SUBNET_HOST: $brooklyn:attributeWhenReady("host.subnet.address")
+        DEPLOY_EAR_URL: $brooklyn:config("websphere.deploy.ear.url")
+        APPLICATION_NAME: $brooklyn:config("websphere.application.name")
+        DEPLOY_EAR_CONTEXT: $brooklyn:config("websphere.deploy.ear.context")
+        RUN_DIR: $brooklyn:attributeWhenReady("run.dir")
+        DATABASE_HOST_AND_PORT: $brooklyn:config("database.hostAndPort")
+        DATABASE_DBNAME: $brooklyn:config("database.dbname")
+        DATABASE_USERNAME: $brooklyn:config("database.username")
+        DATABASE_PASSWORD: $brooklyn:config("database.password")
+        POSTGRESQL_ENABLED: $brooklyn:config("wsl.postgresql.enabled")
+        POSTGRESQL_CLIENT_VERSION: $brooklyn:config("wsl.postgresql.client.version")
+        MARIADB_ENABLED: $brooklyn:config("wsl.mariadb.enabled")
+        MARIADB_CLIENT_VERSION: $brooklyn:config("wsl.mariadb.client.version")
+    
+      brooklyn.initializers:
+      - type: org.apache.brooklyn.core.sensor.StaticSensor
+        brooklyn.config:
+          name: install.version
+          targetType: string
+          static.value: $brooklyn:config("install.version")
+      - type: org.apache.brooklyn.core.sensor.ssh.SshCommandSensor
+        brooklyn.config:
+          name: websphere.pid
+          targetType: int
+          period: 30s
+          command: "cat ${RUN_DIR}/pid.txt"
+      - type: org.apache.brooklyn.core.sensor.ssh.SshCommandSensor
+        brooklyn.config:
+          name: reqs.count
+          targetType: int
+          period: 10s
+          # tied to welcome.jsp
+          command: |
+            MAX_WAIT_SECONDS=5
+            _reqs_count="$(curl --max-time ${MAX_WAIT_SECONDS} -k -s -u ${ADMIN_USERNAME}:${ADMIN_PASSWORD} https://${MANAGEMENT_BIND_ADDRESS}:${HTTPS_PORT}/IBMJMXConnectorREST/mbeans/WebSphere%3Aname%3Ddaytrader3-ee6.TradeAppServlet%2Ctype%3DServletStats/attributes/RequestCount | sed -n 's/^{\"value\":\"\([0-9]\+\)\".*java.lang.Long\"}$/\1/p')"
+
+            # ensure we have a default value of 0 when no value is obtained from JMX
+            # todo - do we have a generic JMX solution for this
+            if [ "x${_reqs_count}" = "x" ]; then
+              echo "0"
+            else
+              echo ${_reqs_count}
+            fi
+
+      brooklyn.enrichers:
+      # publish the URL as a sensor; the GUI will pick this up (main.uri)
+      - type: org.apache.brooklyn.enricher.stock.Transformer
+        brooklyn.config:
+          uniqueTag: url-generator
+          enricher.sourceSensor: host.subnet.hostname
+          # use the definition from Attributes class, as it has a RendererHint so GUI makes it a link
+          enricher.targetSensor: $brooklyn:sensor("org.apache.brooklyn.core.entity.Attributes", "main.uri")
+          enricher.targetValue:
+            $brooklyn:formatString:
+            - "http://%s:%s"
+            - $brooklyn:attributeWhenReady("host.subnet.hostname")
+            - $brooklyn:config("http.port")
+      # derive reqs.per_sec from reqs.count
+      - type: org.apache.brooklyn.enricher.stock.YamlTimeWeightedDeltaEnricher
+        brooklyn.config:
+          enricher.sourceSensor: reqs.count
+          enricher.targetSensor: reqs.per_sec
+          enricher.delta.period: 1s
+    
+      install.command: |
+        echo "Update repository"
+        sudo apt-get update
+
+        #### function definitions ####
+        _ensure_installed() {
+          cmd=$1
+          pkg=$2
+
+          if [ "x${pkg}" = "x" ]; then
+            pkg=$cmd
+          fi
+
+          if ! command -v $cmd; then
+            echo "Installing ${cmd} from package ${pkg}"
+              sudo apt-get install --yes $pkg
+          fi
+        }
+        ##############################
+
+        # Ensure curl is installed
+        _ensure_installed curl
+        _ensure_installed unzip
+
+
+        # Install Java & tools
+        echo "Installing OpenJDK version: ${JAVA_VERSION_REQUIRED}"
+        sudo apt-get install -y openjdk-${JAVA_VERSION_REQUIRED}-jre-headless
+    
+        # Clean the directory
+        echo "Removing any old artifacts"
+        sudo rm -rf ${INSTALL_DIR}/wlp
+    
+        # Download and install the package
+        echo "Downloading the extracting WebSphere release archive - ${LIBERTY_ARCHIVE_URL}"
+        export INSTALL_ARCHIVE=`basename ${LIBERTY_ARCHIVE_URL}`
+        curl -s ${LIBERTY_ARCHIVE_URL} -o ${INSTALL_ARCHIVE}
+        unzip -o ${INSTALL_ARCHIVE}
+
+        # Add the base features with the baseBundle
+        ${INSTALL_DIR}/wlp/bin/installUtility install baseBundle --acceptLicense
+
+        # configure the folders
+        echo "Downloading the extracting WebApp"
+        mkdir ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}
+        mkdir ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/dropins
+        echo "Downloading - ${APPLICATION_ARCHIVE_URL}"
+        curl -s ${APPLICATION_ARCHIVE_URL} -o ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/dropins/daytrader3-ee6.ear
+
+        # Populate Database driver modules - TODO move to children?
+        if [ "${POSTGRESQL_ENABLED}" = "true" ]; then
+          POSTGRESQL_JAR_URL="https://jdbc.postgresql.org/download/postgresql-${POSTGRESQL_CLIENT_VERSION}.jar"
+          echo "Downloading - ${POSTGRESQL_JAR_URL}"
+          curl -s ${POSTGRESQL_JAR_URL} -o ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/postgresql-java-client.jar
+
+          POSTGRESQL_WSL_SERVER_XML="https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/websphere-liberty/resources/postgresql-server.xml"
+          echo "Downloading - ${POSTGRESQL_WSL_SERVER_XML}"
+          curl -s ${POSTGRESQL_WSL_SERVER_XML} -o ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        fi
+        if [ "${MARIADB_ENABLED}" = "true" ]; then
+          MARIADB_JAR_URL="http://repo.maven.apache.org/maven2/org/mariadb/jdbc/mariadb-java-client/${MARIADB_CLIENT_VERSION}/mariadb-java-client-${MARIADB_CLIENT_VERSION}.jar"
+          echo "Downloading - ${MARIADB_JAR_URL}"
+          curl -s ${MARIADB_JAR_URL} -o ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/mariadb-java-client.jar
+
+          MARIADB_WSL_SERVER_XML="https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/websphere-liberty/resources/mariadb-server.xml"
+          echo "Downloading - ${MARIADB_WSL_SERVER_XML}"
+          curl -s ${MARIADB_WSL_SERVER_XML} -o ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        fi
+
+        # Download Keystore
+        echo "Downloading - ${KEYSTORE_URL}"
+        curl -s ${KEYSTORE_URL} -o ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/cert.pfx
+
+      customize.command: |
+        # swap the paths of things in server.xml to the correct locations (nb. needs a '' after -i on OSX)
+        echo "Configuring application"
+        sed -i "s|{certificate_location}|${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/cert.pfx|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{certificate_password}|${KEYSTORE_PASSWORD}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{was_user}|${ADMIN_USERNAME}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{was_password}|${ADMIN_PASSWORD}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{database_driver_directory}|${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+
+        # swap the database deets
+        sed -i "s|{database_dbname}|${DATABASE_DBNAME}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{database_username}|${DATABASE_USERNAME}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{database_password}|${DATABASE_PASSWORD}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{database_host}|${DATABASE_HOST_AND_PORT%\:*}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{database_port}|${DATABASE_HOST_AND_PORT##*:}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{http_port}|${HTTP_PORT}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        sed -i "s|{https_port}|${HTTPS_PORT}|g" ${INSTALL_DIR}/wlp/usr/servers/${APPLICATION_NAME}/server.xml
+        
+      launch.latch: $brooklyn:component("db").attributeWhenReady("service.isUp")
+      launch.command: |
+        echo "Starting WebSphere Liberty"
+        ${INSTALL_DIR}/wlp/bin/server start ${APPLICATION_NAME}
+        echo "WebSphere Liberty Started"
+    
+      checkRunning.command: |
+        # posix-y check for presence of process referenced in run.dir stored pidfile
+        kill -0 `cat ${RUN_DIR}/pid.txt` > /dev/null 2>&1
+    
+      stop.command: |
+        echo "Stopping WebSphere Liberty"
+        ${INSTALL_DIR}/wlp/bin/server stop ${APPLICATION_NAME}
+        echo "WebSphere Liberty Stopped"
+

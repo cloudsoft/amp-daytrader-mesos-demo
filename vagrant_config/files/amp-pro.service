@@ -1,0 +1,12 @@
+[Unit]
+Description=Cloudsoft AMP Pro service
+
+[Service]
+WorkingDirectory=/home/vagrant/cloudsoft-amp-pro
+ExecStart=/home/vagrant/cloudsoft-amp-pro/bin/amp launch --persist auto --persistenceDir /vagrant/amp-pro-persistence --catalogAdd https://raw.githubusercontent.com/cloudsoft/amp-mesos/master/mesos.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/websphere-liberty/websphere-liberty.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/wildfly-10/wildfly10.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/daytrader-application/daytrader-websphereliberty-cluster.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/daytrader-application/daytrader-wildfly-cluster.bom
+Restart=on-abort
+User=vagrant
+Group=vagrant
+
+[Install]
+WantedBy=multi-user.target

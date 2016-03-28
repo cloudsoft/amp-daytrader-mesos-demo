@@ -1,0 +1,425 @@
+# Copyright 2016 by Cloudsoft Corporation Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# - http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+brooklyn.catalog:
+  version: 0.1.0
+  items:
+  - id: daytrader-wildfly-postgresql-cluster
+    name: Daytrader App Cluster (Wildfly10/asdjhgajhskdgaskd)
+    description: |
+      Daytrader 3 performance benchmarking app
+    iconUrl: "https://s3.amazonaws.com/amp-daytrader-mesos-demo/daytrader/img/daytrader_app.png"
+    itemType: template
+    item:
+      brooklyn.parameters:
+      # Database - PostgreSQL
+      - name: db.daytrader.username
+        label: Database username
+        description: Database username
+        default: daytrader
+      - name: db.daytrader.password
+        label: Database password
+        description: Database password
+        default: br00k11n
+      - name: db.install.version
+        label: PostgreSQL version
+        description: PostgreSQL version
+        default: 9.4-1207
+      - name: db.client.version
+        label: PostgreSQL JDBC client version
+        description: PostgreSQL JDBC client version
+        default: 9.4.1207
+      - name: db.datastore.creation.script.template.url
+        label: DDL template URL
+        description: DB creation script freemarker template URL
+        default: "https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/daytrader-application/resources/daytrader-postgresql.template.ddl"
+      # App server - Wildfly
+      - name: as.install.version
+        label: Wildfly10 version
+        description: Wildfly10 version
+        default: 10.0.0.Final
+      - name: as.admin.username
+        label: Wildfly admin username
+        description: Wildfly admin username
+        default: admin
+      - name: as.admin.password
+        label: Wildfly admin password
+        description: Wildfly admin password
+        default: br00k11n
+      - name: as.management.bind.address
+        label: Wildfly management bind address
+        description: Wildfly management bind address
+        default: 127.0.0.1
+      - name: as.daytrader.ear.url
+        label: Daytrader ear URL
+        description: Daytrader ear URL
+        default: "https://s3.amazonaws.com/amp-daytrader-mesos-demo/daytrader/ear/daytrader3-ee6.ear"
+
+      services:
+      - type: org.apache.brooklyn.entity.stock.BasicApplication
+        brooklyn.enrichers:
+        - type: org.apache.brooklyn.enricher.stock.Transformer
+          brooklyn.config:
+            enricher.producer: $brooklyn:entity("balancer")
+            enricher.sourceSensor: $brooklyn:component("balancer").sensor("mapped.proxy.http.port")
+            enricher.targetSensor: $brooklyn:sensor("org.apache.brooklyn.core.entity.Attributes", "main.uri")
+            enricher.targetValue: $brooklyn:formatString("http://%s/%s/", $brooklyn:component("balancer").attributeWhenReady("mapped.proxy.http.port"), $brooklyn:component("wildfly10").config("wildfly.deploy.ear.root.context"))
+
+        brooklyn.children:
+        # Create a PostgreSQL instance and populate with templated ddl
+        - type: daytrader-wildfly-postgresql-node
+
+        # Create a load balancer that balances the Daytrader app instances
+        - type: daytrader-wildfly-balancer-node
+
+        # Creates a cluster of Wildfly 10 Servers running the Daytrader Application
+        - type: org.apache.brooklyn.entity.group.DynamicCluster
+          name: DynamicCluster of Wildfly10 Servers
+          id: wildflycluster
+          brooklyn.config:
+            initialSize: 1
+            memberSpec:
+              $brooklyn:entitySpec:
+                type: wildfly10
+                id: wildfly10
+                name: Wildfly 10 Node
+                brooklyn.config:
+                  provisioning.properties:
+                    minRam: 4096
+                    minCores: 4
+                  wildfly.version: $brooklyn:config("as.install.version")
+                  admin.username: $brooklyn:config("as.admin.username")
+                  admin.password: $brooklyn:config("as.admin.password")
+                  management.bind.address: $brooklyn:config("as.management.bind.address")
+                  wildfly.deploy.ear.url: $brooklyn:config("as.daytrader.ear.url")
+                  wildfly.deploy.ear.root.context: daytrader
+                  wildfly.postgresql.enabled: true
+                  wildfly.postgresql.client.version: $brooklyn:config("db.client.version")
+                  wildfly.datasources:
+                  - jndiname: java:/jdbc/TradeDataSource
+                    poolname: TradeDS
+                    hostAndPort: $brooklyn:component("db").attributeWhenReady("mapped.postgresql.port")
+                    drivername: postgresql
+                    databasename: $brooklyn:component("db").config("daytrader.dbname")
+                    username: $brooklyn:component("db").config("daytrader.username")
+                    password: $brooklyn:component("db").config("daytrader.password")
+                  - jndiname: java:/jdbc/NoTxTradeDataSource
+                    poolname: NoTxTradeDS
+                    hostAndPort: $brooklyn:component("db").attributeWhenReady("mapped.postgresql.port")
+                    drivername: postgresql
+                    databasename: $brooklyn:component("db").config("daytrader.dbname")
+                    username: $brooklyn:component("db").config("daytrader.username")
+                    password: $brooklyn:component("db").config("daytrader.password")
+                  wildfly.datasource.drivers:
+                  - name: postgresql
+                    module: org.postgres
+                    class: org.postgresql.Driver
+                  wildfly.jms.queues:
+                  - name: TradeBrokerQueue
+                  wildfly.jms.topics:
+                  - name: TradeStreamerTopic
+                  wildfly.jms.connectionfactories:
+                  - name: QueueConnectionFactory
+                    connector: in-vm
+                  - name: TopicConnectionFactory
+                    connector: in-vm
+
+                brooklyn.enrichers:
+                - type: org.apache.brooklyn.policy.ha.ServiceFailureDetector
+                  brooklyn.config:
+                    # wait 30s before propagating service failure event
+                    entityFailed.stabilizationDelay: 30s
+                brooklyn.initializers:
+                # expose the http.port config as a sensor for consumption by member.sensor.portNumber in the NginxController
+                - type: org.apache.brooklyn.core.sensor.StaticSensor
+                  brooklyn.config:
+                    name: wildfly.http.port
+                    targetType: int
+                    static.value: $brooklyn:config("http.port")
+                post.launch.command: |
+                  curl --data "action=updateConfig&RunTimeMode=0&OrderProcessingMode=0&WorkloadMix=0&WebInterface=0&MaxUsers=15000&MaxQuotes=10000&marketSummaryInterval=20&primIterations=1&EnableLongRun=on" \
+                    http://localhost:${HTTP_PORT}/${WILDFLY_DEPLOY_EAR_ROOT_CONTEXT}/config
+
+          # back at the cluster, create a total per-sec and some per-node average
+          brooklyn.enrichers:
+          - type: org.apache.brooklyn.enricher.stock.Aggregator
+            brooklyn.config:
+              enricher.sourceSensor: reqs.per_sec
+              enricher.targetSensor: reqs.per_sec.per_node
+              transformation: average
+          - type: org.apache.brooklyn.enricher.stock.Transformer
+            brooklyn.config:
+              enricher.sourceSensor: $brooklyn:component("balancer").sensor("main.uri")
+              enricher.targetSensor: $brooklyn:sensor("org.apache.brooklyn.core.entity.Attributes", "main.uri")
+              enricher.targetValue:
+                $brooklyn:formatString:
+                - "%s/%s"
+                - $brooklyn:component("balancer").attributeWhenReady("main.uri")
+                - $brooklyn:component("wildfly10").config("wildfly.deploy.ear.root.context")
+
+          brooklyn.policies:
+          # resilience: if a per-node restart policy fails,
+          # just throw that node away and create a new one
+          - type: org.apache.brooklyn.policy.ha.ServiceReplacer
+          # and scale based on reqs/sec/per_node
+          - type: org.apache.brooklyn.policy.autoscaling.AutoScalerPolicy
+            brooklyn.config:
+              metric: reqs.per_sec.per_node
+              metricUpperBound: 50
+              metricLowerBound: 10
+              # sustain 50 reqs/sec for 10s and it will scale out
+              resizeUpStabilizationDelay: 10s
+              # only scale down when sustained for 1m
+              resizeDownStabilizationDelay: 1m
+              maxPoolSize: 2
+
+
+  - id: daytrader-wildfly-mariadb-cluster
+    name: Daytrader App Cluster (Wildfly10/MariaDb)
+    description: |
+      Daytrader 3 performance benchmarking app
+    iconUrl: "https://s3.amazonaws.com/amp-daytrader-mesos-demo/daytrader/img/daytrader_app.png"
+    itemType: template
+    item:
+      brooklyn.parameters:
+      # Database - MariaDb
+      - name: db.daytrader.username
+        label: Database username
+        description: Database username
+        default: daytrader
+      - name: db.daytrader.password
+        label: Database password
+        description: Database password
+        default: br00k11n
+      - name: db.install.version
+        label: MariaDB version
+        description: MariaDB version
+        default: 5.5.48
+      - name: db.client.version
+        label: MariaDB JDBC client version
+        description: MariaDB JDBC client version
+        default: 1.3.5
+      - name: db.datastore.creation.script.template.url
+        label: DDL template URL
+        description: DB creation script freemarker template URL
+        default: "https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/daytrader-application/resources/daytrader-mysql.template.ddl"
+      # App server - Wildfly
+      - name: as.install.version
+        label: Wildfly10 version
+        description: Wildfly10 version
+        default: 10.0.0.Final
+      - name: as.admin.username
+        label: Wildfly admin username
+        description: Wildfly admin username
+        default: admin
+      - name: as.admin.password
+        label: Wildfly admin password
+        description: Wildfly admin password
+        default: br00k11n
+      - name: as.management.bind.address
+        label: Wildfly management bind address
+        description: Wildfly management bind address
+        default: 127.0.0.1
+      - name: as.daytrader.ear.url
+        label: Daytrader ear URL
+        description: Daytrader ear URL
+        default: "https://s3.amazonaws.com/amp-daytrader-mesos-demo/daytrader/ear/daytrader3-ee6.ear"
+
+      services:
+      - type: org.apache.brooklyn.entity.stock.BasicApplication
+        brooklyn.enrichers:
+        - type: org.apache.brooklyn.enricher.stock.Transformer
+          brooklyn.config:
+            enricher.producer: $brooklyn:entity("balancer")
+            enricher.sourceSensor: $brooklyn:component("balancer").sensor("mapped.proxy.http.port")
+            enricher.targetSensor: $brooklyn:sensor("org.apache.brooklyn.core.entity.Attributes", "main.uri")
+            enricher.targetValue: $brooklyn:formatString("http://%s/%s/", $brooklyn:component("balancer").attributeWhenReady("mapped.proxy.http.port"), $brooklyn:component("wildfly10").config("wildfly.deploy.ear.root.context"))
+
+        brooklyn.children:
+        # Create a MariaDB instance and populate with templated ddl
+        - type: daytrader-wildfly-mariadb-node
+
+        # Create a load balancer that balances the Daytrader app instances
+        - type: daytrader-wildfly-balancer-node
+
+
+        # Creates a cluster of Wildfly 10 Servers running the Daytrader Application
+        - type: org.apache.brooklyn.entity.group.DynamicCluster
+          name: DynamicCluster of Wildfly10 Servers
+          id: wildflycluster
+          brooklyn.config:
+            initialSize: 1
+            memberSpec:
+              $brooklyn:entitySpec:
+                type: wildfly10
+                id: wildfly10
+                name: Wildfly 10 Node
+                brooklyn.config:
+                  provisioning.properties:
+                    minRam: 4096
+                    minCores: 4
+                  wildfly.version: $brooklyn:config("as.install.version")
+                  admin.username: $brooklyn:config("as.admin.username")
+                  admin.password: $brooklyn:config("as.admin.password")
+                  management.bind.address: $brooklyn:config("as.management.bind.address")
+                  wildfly.deploy.ear.url: $brooklyn:config("as.daytrader.ear.url")
+                  wildfly.deploy.ear.root.context: daytrader
+                  wildfly.mariadb.enabled: true
+                  wildfly.mariadb.client.version: $brooklyn:config("db.client.version")
+                  wildfly.datasources:
+                  - jndiname: java:/jdbc/TradeDataSource
+                    poolname: TradeDS
+                    hostAndPort: $brooklyn:component("db").attributeWhenReady("mapped.mariadb.port")
+                    drivername: mariadb
+                    databasename: $brooklyn:component("db").config("daytrader.dbname")
+                    username: $brooklyn:component("db").config("daytrader.username")
+                    password: $brooklyn:component("db").config("daytrader.password")
+                  - jndiname: java:/jdbc/NoTxTradeDataSource
+                    poolname: NoTxTradeDS
+                    hostAndPort: $brooklyn:component("db").attributeWhenReady("mapped.mariadb.port")
+                    drivername: mariadb
+                    databasename: $brooklyn:component("db").config("daytrader.dbname")
+                    username: $brooklyn:component("db").config("daytrader.username")
+                    password: $brooklyn:component("db").config("daytrader.password")
+                  wildfly.datasource.drivers:
+                  - name: mariadb
+                    module: org.mariadb
+                    class: org.mariadb.jdbc.Driver
+                  wildfly.jms.queues:
+                  - name: TradeBrokerQueue
+                  wildfly.jms.topics:
+                  - name: TradeStreamerTopic
+                  wildfly.jms.connectionfactories:
+                  - name: QueueConnectionFactory
+                    connector: in-vm
+                  - name: TopicConnectionFactory
+                    connector: in-vm
+
+                brooklyn.enrichers:
+                - type: org.apache.brooklyn.policy.ha.ServiceFailureDetector
+                  brooklyn.config:
+                    # wait 30s before propagating service failure event
+                    entityFailed.stabilizationDelay: 30s
+                brooklyn.initializers:
+                # expose the http.port config as a sensor for consumption by member.sensor.portNumber in the NginxController
+                - type: org.apache.brooklyn.core.sensor.StaticSensor
+                  brooklyn.config:
+                    name: wildfly.http.port
+                    targetType: int
+                    static.value: $brooklyn:config("http.port")
+                post.launch.command: |
+                  curl --data "action=updateConfig&RunTimeMode=0&OrderProcessingMode=0&WorkloadMix=0&WebInterface=0&MaxUsers=15000&MaxQuotes=10000&marketSummaryInterval=20&primIterations=1&EnableLongRun=on" \
+                    http://localhost:${HTTP_PORT}/${WILDFLY_DEPLOY_EAR_ROOT_CONTEXT}/config
+
+          # back at the cluster, create a total per-sec and some per-node average
+          brooklyn.enrichers:
+          - type: org.apache.brooklyn.enricher.stock.Aggregator
+            brooklyn.config:
+              enricher.sourceSensor: reqs.per_sec
+              enricher.targetSensor: reqs.per_sec.per_node
+              transformation: average
+          - type: org.apache.brooklyn.enricher.stock.Transformer
+            brooklyn.config:
+              enricher.sourceSensor: $brooklyn:component("balancer").sensor("main.uri")
+              enricher.targetSensor: $brooklyn:sensor("org.apache.brooklyn.core.entity.Attributes", "main.uri")
+              enricher.targetValue:
+                $brooklyn:formatString:
+                - "%s/%s"
+                - $brooklyn:component("balancer").attributeWhenReady("main.uri")
+                - $brooklyn:component("wildfly10").config("wildfly.deploy.ear.root.context")
+
+          brooklyn.policies:
+          # resilience: if a per-node restart policy fails,
+          # just throw that node away and create a new one
+          - type: org.apache.brooklyn.policy.ha.ServiceReplacer
+          # and scale based on reqs/sec/per_node
+          - type: org.apache.brooklyn.policy.autoscaling.AutoScalerPolicy
+            brooklyn.config:
+              metric: reqs.per_sec.per_node
+              metricUpperBound: 50
+              metricLowerBound: 10
+              # sustain 50 reqs/sec for 10s and it will scale out
+              resizeUpStabilizationDelay: 10s
+              # only scale down when sustained for 1m
+              resizeDownStabilizationDelay: 1m
+              maxPoolSize: 2
+
+
+  # Create a load balancer that balances the Daytrader app instances
+  - id: daytrader-wildfly-balancer-node
+    name: Daytrader Balancer Node
+    description: |
+      Daytrader Balancer Node
+    item:
+      services:
+      - type: org.apache.brooklyn.entity.proxy.nginx.NginxController
+        name: Load Balancer (nginx)
+        id: balancer
+        brooklyn.config:
+          # point this load balancer at the cluster, specifying port to forward to
+          loadbalancer.serverpool:  $brooklyn:entity("wildflycluster")
+          member.sensor.hostandport: mapped.docker.port.8080
+        brooklyn.enrichers:
+        - type: org.apache.brooklyn.enricher.stock.Transformer
+          brooklyn.config:
+            uniqueTag: url-generator
+            enricher.sourceSensor: $brooklyn:sensor("mapped.proxy.http.port")
+            enricher.targetSensor: $brooklyn:sensor("main.uri")
+            enricher.targetValue:
+              $brooklyn:formatString:
+              - "http://%s/"
+              - $brooklyn:attributeWhenReady("mapped.proxy.http.port")
+
+
+  # Create a PostgreSQL instance and populate with templated ddl
+  - id: daytrader-wildfly-postgresql-node
+    name: Daytrader PostgreSQL Node
+    description: |
+      Daytrader PostgreSQL Node
+    item:
+      services:
+      - type: org.apache.brooklyn.entity.database.postgresql.PostgreSqlNode
+        id: db
+        name: Daytrader PostgreSQL DB
+        brooklyn.config:
+          provisioning.properties:
+            minRam: 1024
+            minCores: 2
+          install.version: $brooklyn:config("db.install.version")
+          daytrader.username: $brooklyn:config("db.daytrader.username")
+          daytrader.password: $brooklyn:config("db.daytrader.password")
+          datastore.creation.script.template.url: $brooklyn:config("db.datastore.creation.script.template.url")
+          daytrader.dbname: daytrader
+
+
+  # Create a MariaDB instance and populate with templated ddl
+  - id: daytrader-wildfly-mariadb-node
+    name: Daytrader MariaDB Node
+    description: |
+      Daytrader MariaDB Node
+    item:
+      services:
+      - type: org.apache.brooklyn.entity.database.mariadb.MariaDbNode
+        id: db
+        name: Daytrader MariaDb DB
+        brooklyn.config:
+          provisioning.properties:
+            minRam: 1024
+            minCores: 2
+          install.version: $brooklyn:config("db.install.version")
+          daytrader.username: $brooklyn:config("db.daytrader.username")
+          daytrader.password: $brooklyn:config("db.daytrader.password")
+          datastore.creation.script.template.url: $brooklyn:config("db.datastore.creation.script.template.url")
+          daytrader.dbname: daytrader
+          mariadb.server.conf.lower_case_table_names: 1

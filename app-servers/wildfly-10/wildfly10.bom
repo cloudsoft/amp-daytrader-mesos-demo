@@ -1,0 +1,246 @@
+# Copyright 2016 by Cloudsoft Corporation Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# - http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+brooklyn.catalog:
+  version: 0.1.0
+  items:
+  - id: wildfly10
+    name: Wildfly 10 Node
+    item:
+      type: org.apache.brooklyn.entity.software.base.VanillaSoftwareProcess
+
+      brooklyn.config:
+        docker.container.openPorts:
+        - 22
+        - $brooklyn:config("http.port")
+        - $brooklyn:config("https.port")
+        - $brooklyn:config("management.http.port")
+        - $brooklyn:config("management.https.port")
+        admin.username: admin
+        admin.password: password
+        http.port: 8080
+        https.port: 8443
+        install.version: 10.0.0.Final
+        java.version.required: 8
+        management.bind.address: 127.0.0.1
+        management.http.port: 9990
+        management.https.port: 9993
+        metrics.usage.retrieve: true
+        port.offset: 0
+        public.bind.address: 0.0.0.0
+        unsecure.bind.address: 127.0.0.1
+        templates.install:
+          "https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/wildfly-10/resources/standalone-brooklyn.template.xml": templates/standalone-brooklyn.xml
+          "https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/wildfly-10/resources/postgresql-module.template.xml": templates/postgresql-module.xml
+          "https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/wildfly-10/resources/mariadb-module.template.xml": templates/mariadb-module.xml
+        wildfly.mariadb.client.version: 1.3.5
+        wildfly.mariadb.enabled: false
+        wildfly.mariadb.dependencies:
+        - javax.api
+        - javax.transaction.api
+        wildfly.postgresql.client.version: 9.4.1207
+        wildfly.postgresql.enabled: false
+        wildfly.postgresql.dependencies:
+        - javax.api
+        - javax.transaction.api
+
+      shell.env:
+        ADMIN_USERNAME: $brooklyn:config("admin.username")
+        ADMIN_PASSWORD: $brooklyn:config("admin.password")
+        HTTP_PORT: $brooklyn:config("http.port")
+        HTTPS_PORT: $brooklyn:config("https.port")
+        INSTALL_VERSION: $brooklyn:config("install.version")
+        JAVA_VERSION_REQUIRED: $brooklyn:config("java.version.required")
+        MANAGEMENT_HTTP_PORT: $brooklyn:config("management.http.port")
+        METRICS_USAGE_RETRIEVE: $brooklyn:config("metrics.usage.retrieve")
+        PUBLIC_BIND_ADDRESS: $brooklyn:config("public.bind.address")
+        POSTGRESQL_ENABLED: $brooklyn:config("wildfly.postgresql.enabled")
+        POSTGRESQL_CLIENT_VERSION: $brooklyn:config("wildfly.postgresql.client.version")
+        MARIADB_ENABLED: $brooklyn:config("wildfly.mariadb.enabled")
+        MARIADB_CLIENT_VERSION: $brooklyn:config("wildfly.mariadb.client.version")
+        WILDFLY_DEPLOY_EAR_URL: $brooklyn:config("wildfly.deploy.ear.url")
+        WILDFLY_DEPLOY_EAR_ROOT_CONTEXT: $brooklyn:config("wildfly.deploy.ear.root.context")
+        INSTALL_DIR: $brooklyn:attributeWhenReady("install.dir")
+        WILDFLY_HOST: $brooklyn:attributeWhenReady("host.address")
+        WILDFLY_SUBNET_HOST: $brooklyn:attributeWhenReady("host.subnet.address")
+        RUN_DIR: $brooklyn:attributeWhenReady("run.dir")
+
+      brooklyn.initializers:
+      - type: org.apache.brooklyn.core.sensor.StaticSensor
+        brooklyn.config:
+          name: install.version
+          targetType: string
+          static.value: $brooklyn:config("install.version")
+      - type: org.apache.brooklyn.core.sensor.ssh.SshCommandSensor
+        brooklyn.config:
+          name: wildfly.pid
+          targetType: int
+          period: 30s
+          command: "cat /var/run/wildfly/wildfly.pid"
+      - type: org.apache.brooklyn.core.sensor.ssh.SshCommandSensor
+        brooklyn.config:
+          name: reqs.count
+          targetType: int
+          period: 10s
+          command: "${INSTALL_DIR}/wildfly-${INSTALL_VERSION}/bin/jboss-cli.sh -c --command='/subsystem=undertow/server=default-server/http-listener=default:read-attribute(name=request-count)' | grep result | awk '{print $3}' | sed 's/L$//'"
+
+      brooklyn.enrichers:
+      # publish the URL as a sensor; the GUI will pick this up (main.uri)
+      - type: org.apache.brooklyn.enricher.stock.Transformer
+        brooklyn.config:
+          uniqueTag: url-generator
+          enricher.sourceSensor: host.subnet.hostname
+          # use the definition from Attributes class, as it has a RendererHint so GUI makes it a link
+          enricher.targetSensor: $brooklyn:sensor("org.apache.brooklyn.core.entity.Attributes", "main.uri")
+          enricher.targetValue:
+            $brooklyn:formatString:
+            - "http://%s:%s"
+            - $brooklyn:attributeWhenReady("host.subnet.hostname")
+            - $brooklyn:config("http.port")
+      # derive reqs.per_sec from reqs.count
+      - type: org.apache.brooklyn.enricher.stock.YamlTimeWeightedDeltaEnricher
+        brooklyn.config:
+          enricher.sourceSensor: reqs.count
+          enricher.targetSensor: reqs.per_sec
+          enricher.delta.period: 1s
+
+      install.command: |
+
+        echo "Update repository"
+        sudo apt-get update
+
+        #### function definitions ####
+        _ensure_installed() {
+          cmd=$1
+          pkg=$2
+
+          if [ "x${pkg}" = "x" ]; then
+            pkg=$cmd
+          fi
+
+          if ! command -v $cmd; then
+            echo "Installing ${cmd} from package ${pkg}"
+              sudo apt-get install --yes $pkg
+          fi
+        }
+        ##############################
+
+        # Ensure curl is installed
+        _ensure_installed curl
+
+        # Install Java
+        . /etc/lsb-release
+        if ! dpkg --compare-versions "${DISTRIB_RELEASE}" gt "14.04"; then
+          # Make add-apt-repository command available (not present on base docker image)
+          _ensure_installed add-apt-repository software-properties-common
+
+          echo "Adding repository for Java 8 JRE backport to 14.04 from - ppa:openjdk-r/ppa"
+          # Not required from 14.10 onwards
+          sudo add-apt-repository --yes ppa:openjdk-r/ppa
+          sudo apt-get update
+        fi
+
+        echo "Installing OpenJDK Java JRE version - ${JAVA_VERSION_REQUIRED}"
+        sudo apt-get install --yes openjdk-${JAVA_VERSION_REQUIRED}-jre-headless
+
+        # Download and install the package
+        echo "Downloading the extracting Wildfly release archive"
+        curl -s http://download.jboss.org/wildfly/${INSTALL_VERSION}/wildfly-${INSTALL_VERSION}.tar.gz -o wildfly-${INSTALL_VERSION}.tar.gz
+        tar zxf wildfly-${INSTALL_VERSION}.tar.gz
+
+        # Create Wildfly admin user
+        ( cd ${INSTALL_DIR}/wildfly-${INSTALL_VERSION}/; ./bin/add-user.sh -u ${ADMIN_USERNAME} -p ${ADMIN_PASSWORD} )
+
+        # Deploy init scripts
+        echo "Installing Wildfly init scripts"
+        sudo cp ${INSTALL_DIR}/wildfly-${INSTALL_VERSION}/docs/contrib/scripts/init.d/wildfly.conf /etc/default/wildfly
+        sudo cp ${INSTALL_DIR}/wildfly-${INSTALL_VERSION}/docs/contrib/scripts/init.d/wildfly-init-debian.sh /etc/init.d/wildfly
+        sudo chmod a+x /etc/init.d/wildfly
+
+        # Populate Database driver modules - TODO move to children?
+        if [ "${POSTGRESQL_ENABLED}" = "true" ]; then
+          POSTGRES_MODULE_DIR=${INSTALL_DIR}/wildfly-${INSTALL_VERSION}/modules/org/postgres/main/
+          echo "Install PostgreSQL Driver Module to - ${POSTGRES_MODULE_DIR}"
+          mkdir -p ${POSTGRES_MODULE_DIR}
+          curl -s https://jdbc.postgresql.org/download/postgresql-${POSTGRESQL_CLIENT_VERSION}.jar -o ${POSTGRES_MODULE_DIR}/postgresql-${POSTGRESQL_CLIENT_VERSION}.jar
+          cp ${INSTALL_DIR}/templates/postgresql-module.xml ${POSTGRES_MODULE_DIR}/module.xml
+        fi
+        if [ "${MARIADB_ENABLED}" = "true" ]; then
+          MARIADB_MODULE_DIR=${INSTALL_DIR}/wildfly-${INSTALL_VERSION}/modules/org/mariadb/main/
+          echo "Install MariaDb Driver Module to - ${MARIADB_MODULE_DIR}"
+          mkdir -p ${MARIADB_MODULE_DIR}
+          curl -s http://repo.maven.apache.org/maven2/org/mariadb/jdbc/mariadb-java-client/${MARIADB_CLIENT_VERSION}/mariadb-java-client-${MARIADB_CLIENT_VERSION}.jar -o ${MARIADB_MODULE_DIR}/mariadb-java-client-${MARIADB_CLIENT_VERSION}.jar
+          cp ${INSTALL_DIR}/templates/mariadb-module.xml ${MARIADB_MODULE_DIR}/module.xml
+        fi
+
+        # Copy populated standalone-brooklyn.xml template into place
+        cp ${INSTALL_DIR}/templates/standalone-brooklyn.xml ${INSTALL_DIR}/wildfly-${INSTALL_VERSION}/standalone/configuration/standalone-brooklyn.xml
+
+        # Deploy EAR file to specified context
+        # TODO - handle arrays or ears/contexts/wars etc
+        if [ ! "x${WILDFLY_DEPLOY_EAR_URL}" = "x" ]; then
+          EAR_FILE=`basename ${WILDFLY_DEPLOY_EAR_URL}`
+          CONTEXT_DIR="${INSTALL_DIR}/wildfly-${INSTALL_VERSION}/standalone/deployments/${WILDFLY_DEPLOY_EAR_ROOT_CONTEXT}"
+          echo "Create context directory - ${CONTEXT_DIR}"
+          mkdir -p ${CONTEXT_DIR}
+          echo "Download EAR file (${EAR_FILE}) from - ${WILDFLY_DEPLOY_EAR_URL}"
+          curl -o ${CONTEXT_DIR}/${EAR_FILE} $WILDFLY_DEPLOY_EAR_URL
+        fi
+
+      customize.command: |
+        # Configure Wildfly defaults (for initV script)
+        echo "Configuring Wildfly defaults"
+        sudo sed -i "s|.*JBOSS_HOME.*|JBOSS_HOME=\"${INSTALL_DIR}\/wildfly-${INSTALL_VERSION}\/\"|g" /etc/default/wildfly
+        sudo sed -i "s|.*JBOSS_USER.*|JBOSS_USER=${USER}|g" /etc/default/wildfly
+        sudo sed -i "s|.*JBOSS_MODE.*|JBOSS_MODE=standalone|g" /etc/default/wildfly
+        sudo sed -i "s|.*JBOSS_CONFIG.*|JBOSS_CONFIG=standalone-brooklyn.xml|g" /etc/default/wildfly
+        sudo sed -i "s|.*STARTUP_WAIT.*|STARTUP_WAIT=60|g" /etc/default/wildfly
+        sudo sed -i "s|.*SHUTDOWN_WAIT.*|SHUTDOWN_WAIT=60|g" /etc/default/wildfly
+        sudo sed -i "s|.*JBOSS_CONSOLE_LOG.*|JBOSS_CONSOLE_LOG=/var/log/wildfly/console.log|g" /etc/default/wildfly
+
+        # Set owner for install directory
+        sudo chown -R ${USER}:${USER} "${INSTALL_DIR}"
+
+        # Update remote management port for CLI
+        sed -i "s|<port>9990</port>|<port>${MANAGEMENT_HTTP_PORT}</port>|g" ${INSTALL_DIR}\/wildfly-${INSTALL_VERSION}/bin/jboss-cli.xml
+
+      launch.latch: $brooklyn:component("db").attributeWhenReady("service.isUp")
+      launch.command: |
+        if command -v systemctl; then
+          echo "Reloading SystemD"
+          sudo systemctl daemon-reload
+
+          echo "Starting Wildfly"
+          sudo systemctl start wildfly
+          echo "Wildfly Started"
+        else
+          echo "Starting Wildfly"
+          sudo service wildfly start
+          echo "Wildfly Started"
+        fi
+
+      checkRunning.command: |
+        # posix-y check for presence of process referenced in Wildfly pidfile
+        kill -0 `cat /var/run/wildfly/wildfly.pid` > /dev/null 2>&1
+
+      stop.command: |
+        if command -v systemctl; then
+          echo "Stopping Wildfly"
+          sudo systemctl stop wildfly
+          echo "Wildfly Stopped"
+        else
+          echo "Starting Wildfly"
+          sudo service wildfly stop
+          echo "Wildfly Started"
+        fi

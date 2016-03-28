@@ -1,0 +1,38 @@
+# Before adding this location to the catalog using you *MUST* update all <REPLACE_THIS> tokens with values appropriate for your environment
+
+
+brooklyn.catalog:
+  version: 0.1.0
+  items:
+
+  - id: ibm-bluebox-mesos
+    itemType: location
+    item:
+
+      type: jclouds:openstack-nova
+      brooklyn.config:
+        osFamily: ubuntu
+        osVersionRegex: 14.04
+
+        endpoint: <REPLACE_THIS>          # For example: https://xxxxxxx-sjc.openstack.blueboxgrid.com:5000/v2.0
+        identity: <REPLACE_THIS>          # For example: tenant:tenant
+        credential: <REPLACE_THIS>        # For example: "mypassword"
+        jclouds.keystone.credential-type: passwordCredentials
+
+        jclouds.openstack-nova.auto-create-floating-ips: true
+        jclouds.openstack-nova.auto-generate-keypairs: false
+
+        loginUser: ubuntu
+        loginUser.privateKeyFile: <REPLACE_THIS> # For example: ~/.ssh/mesos.pem
+
+        user: ubuntu
+        grantUserSudo: true
+        privateKeyFile: <REPLACE_THIS>       # For example: ~/.ssh/mesos.pem
+        publicKeyFile: <REPLACE_THIS>        # For example: ~/.ssh/mesos.pub
+
+        securityGroups: <REPLACE_THIS>       # Your Mesos security group. For example: mesos
+                                             # See README.md for information on security group setting
+        templateOptions:
+          networks: [ "<REPLACE_THIS>" ]     # Your subnet id. For example: xxxxxxx-yyyy-zzzz-aaaa-bbbbbbbbbbbbb
+          floatingIpPoolNames: [ "<REPLACE_THIS>" ]  # Your floating IP Pool Name. For example: external
+          keyPairName: [ "<REPLACE_THIS>" ]  # Your key pair name. For example: mesos
