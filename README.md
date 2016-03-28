@@ -19,7 +19,7 @@ Before proceeding you will need the following:
 
 The Quickstart sections will guide you through the process of deploying AMP Pro, adding a cloud location to its catalog (where you'll be deploying the Apache Mesos Cluster), adding the demo application catalogs and subsequent deployment of a selection of DayTrader Cluster variants to Apache Mesos.
 
-You can use the provided Vagrant or manual process to start your AMP Pro instance.
+You can use the provided Vagrant, Docker or manual process to start your AMP Pro instance.
 
 ### Starting AMP Pro with Vagrant
 
@@ -45,6 +45,18 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
 
 5. Add your Blue Box OpenStack location to the catalog - see [here](#ibm-blue-box). This is where we'll be deploying the Apache Mesos Cluster.
 
+### Starting AMP Pro with Docker
+
+1. Start an AMP Pro instance as follows, mapping your `~/.ssh` directory to `/root/.ssh` so that your Cloud provider keys are available to AMP Pro. If you store your keys in an alternate location then you should map that instead. See the [Docker Container configuration section](#demo-docker-container-configuration) for more information on available configuration:
+
+    ```
+    docker run --name amppro -v ~/.ssh/:/root/.ssh -d -p 8081:8081 cloudsoft/amp-daytrader-mesos-demo
+    ```
+
+2. Connect to the AMP Pro web console at `http://<docker host ip>:8081` with the username `docker` and password `docker`. Refer to the [Docker documentation](https://docs.docker.com/) if you are unsure of the Docker hosts IP address. Information on changing the passwords is available [here](#custom-username-and-password).
+
+3. Add your Blue Box Openstack location to the catalog - see [here](#ibm-blue-box). This is where we'll be deploying the Apache Mesos Cluster. Mapped keys will be available in `~/.ssh`.
+
 ### Starting AMP Pro Manually
 
 1. Download and extract the current AMP Pro release archive and change to the extracted directory:
@@ -60,9 +72,9 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
     ./bin/amp launch --persist=auto  --catalogAdd https://raw.githubusercontent.com/cloudsoft/amp-mesos/master/mesos.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/websphere-liberty/websphere-liberty.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/wildfly-10/wildfly10.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/daytrader-application/daytrader-websphereliberty-cluster.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/daytrader-application/daytrader-wildfly-cluster.bom
     ```
 
-4. Connect to the AMP Pro web console [http://localhost:8081](http://localhost:8081).
+3. Connect to the AMP Pro web console [http://localhost:8081](http://localhost:8081).
 
-5. Add your Blue Box OpenStack location to the catalog - see [here](#ibm-blue-box). This is where we'll be deploying the Apache Mesos Cluster.
+4. Add your Blue Box OpenStack location to the catalog - see [here](#ibm-blue-box). This is where we'll be deploying the Apache Mesos Cluster.
 
 ## Start Apache Mesos Cluster
 
@@ -208,6 +220,32 @@ The following sections give a very high level overview of the OpenStack configur
 3. From the [AMP Pro web console](http://localhost:8081) Catalog tab, add the updated `sample-bluebox.bom` to the catalog by pasting the contents into the blueprint composer and clicking `Add to Catalog`.
 
    The location `ibm-bluebox-mesos` will now be available in AMP and should be used as the target location for your Mesos Cluster.
+
+
+## Demo Docker Container Configuration
+
+### Custom Username and Password
+You can set a custom username and password by passing the following environment variables to the `docker run` command, for example to set the username `myusername` and password `mypassword` you would add the following:
+```
+-e "brooklyn.webconsole.security.users=myusername" -e "brooklyn.webconsole.security.user.docker.password=mypassword"
+```
+
+### Persisting AMP Pro State
+You can persist the AMP State by mapping the `/root/.brooklyn-persistence` directory in the container to your local filesystem, or to a dedicated data container. For example to store AMP state in `~/my-amppro-state` on your local filesystem you would pass the following options to the `docker run` command:
+```
+-v ~/my-amppro-state:/root/.brooklyn-persistence
+```
+
+### Using a custom brooklyn properties
+As with the persistance directories above, the `/root/.brooklyn` directory is also available to be mapped from your local filesystem or dedicated data container. For example to use a custom `brooklyn.properties` file stored in `~/my-custom-properties/` on your local filesystem with the AMP Pro container you would pass the following options to the `docker run` command:
+```
+-v ~/my-custom-properties:/root/.brooklyn
+```
+Alternatively, if you just wish to set a very small number of properties you can pass them by setting environment variables used on AMP Pro startup. For example to disable access to the Web Console (REST API access only), you could pass the following option to the `docker run` command:
+```
+-e "brooklyn.webconsole.security.provider=org.apache.brooklyn.rest.security.provider.BlackholeSecurityProvider"
+```
+
 
 ## License
 
