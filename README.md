@@ -1,4 +1,4 @@
-# AMP Mesos DayTrader Mesos
+# AMP Mesos DayTrader Demo
 
 These demonstration applications create an autoscaling cluster of DayTrader nodes running on a choice of both Web Application Servers ([IBM Websphere Liberty](https://developer.ibm.com/wasdev/websphere-liberty/) or [Wildfly 10](http://wildfly.org/)) and Databases ([MariaDB](https://mariadb.com/) or [PostgreSQL](http://www.postgresql.org/)) within an AMP Pro deployed Apache Mesos Cluster running the Marathon Framework.
 
