@@ -101,7 +101,13 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
 
 ## Demonstrating Autoscaling
 
-1. Follow the instructions on the IBM Blog post '[Measuring performance with the Daytrader 3 benchmark sample](https://developer.ibm.com/wasdev/docs/measuring-performance-daytrader-3-benchmark-sample/)' to download the `DayTrader3Install.zip` via the WebSphere Performance Page. This archive contains a sample Daytrader JMeter test suite file `daytrader3.jmx` which can be used to drive load through the DayTrader application.
+1. Follow the instructions on the IBM Blog post '[Measuring performance with the Daytrader 3 benchmark sample](https://developer.ibm.com/wasdev/docs/measuring-performance-daytrader-3-benchmark-sample/)' to download [Apache JMeter](http://jmeter.apache.org/) and the `DayTrader3Install.zip` via the WebSphere Performance Page. This archive contains a sample Daytrader JMeter test suite file `daytrader3.jmx` which can be used to drive load through the DayTrader application.
+    ```
+    curl -O http://www.mirrorservice.org/sites/ftp.apache.org/jmeter/binaries/apache-jmeter-2.13.tgz
+    tar zxf apache-jmeter-2.13.tgz
+    curl -O ftp://public.dhe.ibm.com/software/webservers/appserv/was/DayTrader3Install.zip
+    tar zxf DayTrader3Install.zip
+    ```
 
 2. Populate the DayTrader Database before running JMeter load
 
@@ -112,7 +118,11 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
 
 3. Start the JMeter GUI supplying the `HOST` and `PORT` values for your deployed DayTrader cluster (from the `main.uri` on the '*DayTrader WSL MariaDB*' Summary page).
     ```
-    ./apache-jmeter-2.13/bin/jmeter.sh -t ./daytrader3.jmx -JHOST=<MAPPED BALANCER HOST> -JPORT=<MAPPED BALANCER PORT> -JDURATION=600
+    ./apache-jmeter-2.13/bin/jmeter.sh \
+        -t DayTrader3Install/DayTrader3-EE6/Apache_JMeter_script/daytrader3.jmx \
+        -JHOST=<MAPPED BALANCER HOST> \
+        -JPORT=<MAPPED BALANCER PORT> \
+        -JDURATION=600
     ```
 
 4. On opening JMeter you should be presented with the **Thread Group** page, you should alter the `Number of Threads (users)` setting as desired. For demonstration purposes it is recommended to lower this to `10` results in approximately 60 requests/second from an i7 mbp. The default autoscaling thresholds for both Wildfly and WebSphere Liberty have been set to upper `40` and lower `20`.
