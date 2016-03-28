@@ -1,6 +1,6 @@
 # AMP Mesos DayTrader Demo
 
-These demonstration applications create an autoscaling cluster of DayTrader nodes running on a choice of both Web Application Servers ([IBM Websphere Liberty](https://developer.ibm.com/wasdev/websphere-liberty/) or [Wildfly 10](http://wildfly.org/)) and Databases ([MariaDB](https://mariadb.com/) or [PostgreSQL](http://www.postgresql.org/)) within an AMP Pro deployed Apache Mesos Cluster running the Marathon Framework.
+These demonstration applications create an autoscaling cluster of DayTrader nodes running on a choice of both Web Application Servers ([IBM WebSphere Liberty](https://developer.ibm.com/wasdev/websphere-liberty/) or [Wildfly 10](http://wildfly.org/)) and Databases ([MariaDB](https://mariadb.com/) or [PostgreSQL](http://www.postgresql.org/)) within an AMP Pro deployed Apache Mesos Cluster running the Marathon Framework.
 
 Load balancing is provided by [Nginx](http://nginx.org/) with the balancer group auto-updating as the AMP Pro autoscaling policy adds and removes DayTrader nodes in response to traffic hitting those nodes.
 
@@ -43,7 +43,7 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
 
 4. Connect to the AMP Pro web console [http://localhost:8081](http://localhost:8081).
 
-5. Add your Blue Box Openstack location to the catalog - see [here](#ibm-blue-box). This is where we'll be deploying the Apache Mesos Cluster.
+5. Add your Blue Box OpenStack location to the catalog - see [here](#ibm-blue-box). This is where we'll be deploying the Apache Mesos Cluster.
 
 ### Starting AMP Pro Manually
 
@@ -54,7 +54,7 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
     cd cloudsoft-amp-pro-3.1.0-20160327.1622
     ```
 
-2. Launch AMP Pro passing the Mesos Cluster, and demo Websphere Liberty, Wildfly, and Daytrader catalog definitions on startup (this is a very long command as we're pulling in multiple catalogs in a comma seperated list):
+2. Launch AMP Pro passing the Mesos Cluster, and demo WebSphere Liberty, Wildfly, and Daytrader catalog definitions on startup (this is a very long command as we're pulling in multiple catalogs in a comma seperated list):
 
     ```
     ./bin/amp launch --persist=auto  --catalogAdd https://raw.githubusercontent.com/cloudsoft/amp-mesos/master/mesos.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/websphere-liberty/websphere-liberty.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/app-servers/wildfly-10/wildfly10.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/daytrader-application/daytrader-websphereliberty-cluster.bom,https://raw.githubusercontent.com/cloudsoft/amp-daytrader-mesos-demo/master/daytrader-application/daytrader-wildfly-cluster.bom
@@ -62,7 +62,7 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
 
 4. Connect to the AMP Pro web console [http://localhost:8081](http://localhost:8081).
 
-5. Add your Blue Box Openstack location to the catalog - see [here](#ibm-blue-box). This is where we'll be deploying the Apache Mesos Cluster.
+5. Add your Blue Box OpenStack location to the catalog - see [here](#ibm-blue-box). This is where we'll be deploying the Apache Mesos Cluster.
 
 ## Start Apache Mesos Cluster
 
@@ -80,7 +80,7 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
 
    Switching to the Applications tab and expanding the tree view you can find the Mesos Url on the Apache Mesos Cluster Summary page, and Marathon Url under Mesos Frameworks on the Marathon Framework Summary page.
 
-## Start a DayTrader Cluster with IBM Websphere Liberty and MariaDB
+## Start a DayTrader Cluster with IBM WebSphere Liberty and MariaDB
 
 1. From the AMP Pro web console Home tab click '*add application*', select '*DayTrader App Cluster (**WebSphere Liberty/MariaDb**)*' and hit next'.
 
@@ -101,7 +101,7 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
 
 ## Demonstrating Autoscaling
 
-1. Follow the instructions on the IBM Blog post '[Measuring performance with the Daytrader 3 benchmark sample](https://developer.ibm.com/wasdev/docs/measuring-performance-daytrader-3-benchmark-sample/)' to download the `DayTrader3Install.zip` via the WebSphere Performance Page. This archive contains a sample Daytrader Jmeter test suite file `daytrader3.jmx` which can be used to drive load through the DayTrader application.
+1. Follow the instructions on the IBM Blog post '[Measuring performance with the Daytrader 3 benchmark sample](https://developer.ibm.com/wasdev/docs/measuring-performance-daytrader-3-benchmark-sample/)' to download the `DayTrader3Install.zip` via the WebSphere Performance Page. This archive contains a sample Daytrader JMeter test suite file `daytrader3.jmx` which can be used to drive load through the DayTrader application.
 
 2. Populate the DayTrader Database before running JMeter load
 
@@ -110,12 +110,12 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
 
        This will open a new, initially blank, page which will periodically update as sample stock and user data is loaded. This can take some time to complete, and updates only infrequently. You will know it is complete when the plain update text is followed by what looks like a normal configuration page.
 
-3. Start the JMeter GUI supplying the `HOST` and `PORT` values for your deployed deployed DayTrader cluster (from the `main.uri` on the '*DayTrader WSL MariaDB*' Summary page).
+3. Start the JMeter GUI supplying the `HOST` and `PORT` values for your deployed DayTrader cluster (from the `main.uri` on the '*DayTrader WSL MariaDB*' Summary page).
     ```
     ./apache-jmeter-2.13/bin/jmeter.sh -t ./daytrader3.jmx -JHOST=<MAPPED BALANCER HOST> -JPORT=<MAPPED BALANCER PORT> -JDURATION=600
     ```
 
-4. On opening Jmeter you should be presented with the **Thread Group** page, you should alter the `Number of Threads (users)` setting as desired. For demonstration purposes it is recommended to lower this to `10` results in approximately 60 requests/second from an i7 mbp. The default autoscaling thresholds for both Wildfly and Websphere Liberty have been set to upper `40` and lower `20`.
+4. On opening JMeter you should be presented with the **Thread Group** page, you should alter the `Number of Threads (users)` setting as desired. For demonstration purposes it is recommended to lower this to `10` results in approximately 60 requests/second from an i7 mbp. The default autoscaling thresholds for both Wildfly and WebSphere Liberty have been set to upper `40` and lower `20`.
 
 5. Right click and enable **Aggregate Report** in the left hand tree, and when ready to start traffic click the **green play** menubar item. You should immediately start to see results fill the report pane. The reqs/sec rate should approximately match that show in the Dynamic Cluster Groups `reqs.per_sec.per_node` sensor.
 
@@ -141,11 +141,11 @@ Blueprint catalog files DayTrader running on Wildfly10 with both MariaDB and Pos
 ## Cloud Provider Configuration
 
 ### IBM Blue Box
-This demo used the following very basic public configuration on IBM Bluebox to provision Ubuntu 14.04 VMs with floating IPs assigned, additional configurations (private, mixed etc) are possibly but not documented here.
+This demo used the following very basic public configuration on IBM Blue Box to provision Ubuntu 14.04 VMs with floating IPs assigned, additional configurations (private, mixed etc) are possibly but not documented here.
 
-The following sections give a very high level overview of the Openstack configuration used and instructions on adding your own credentials and settings to the AMP node as a location using a provided location template.
+The following sections give a very high level overview of the OpenStack configuration used and instructions on adding your own credentials and settings to the AMP node as a location using a provided location template.
 
-#### Openstack Configuration Overview
+#### OpenStack Configuration Overview
 
 - **Image**
 
@@ -157,7 +157,7 @@ The following sections give a very high level overview of the Openstack configur
 
   You may use an existing keypair if desired.
 
-  This keypair must be [accessible in your bluebox cloud](http://docs.openstack.org/user-guide/cli_nova_configure_access_security_for_instances.html) - it is used to ssh to newly provisioned VMs. We will configure AMP to continue using this `mesos.pem` with the default `ubuntu` user on the Ubuntu 14.04 instances.
+  This keypair must be [accessible in your Blue Box cloud](http://docs.openstack.org/user-guide/cli_nova_configure_access_security_for_instances.html) - it is used to ssh to newly provisioned VMs. We will configure AMP to continue using this `mesos.pem` with the default `ubuntu` user on the Ubuntu 14.04 instances.
 
 - **Security Group**
 
@@ -193,7 +193,7 @@ The following sections give a very high level overview of the Openstack configur
 
 1. Create a local copy of the templated location catalog yaml file `sample-bluebox.bom` [here](locations/sample-bluebox.bom).
 
-2. Update the file replacing the `<REPLACE_THIS>` tokens with appropriate values from your Blue Box Openstack environment.
+2. Update the file replacing the `<REPLACE_THIS>` tokens with appropriate values from your Blue Box OpenStack environment.
 
 3. From the [AMP Pro web console](http://localhost:8081) Catalog tab, add the updated `sample-bluebox.bom` to the catalog by pasting the contents into the blueprint composer and clicking `Add to Catalog`.
 
