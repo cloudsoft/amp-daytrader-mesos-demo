@@ -12,7 +12,7 @@ servers:
        host: 8081
     shell:
       env:
-        AMP_PRO_VERSION: 3.1.0-20160330.1541
+        AMP_PRO_VERSION: 3.1.0
       cmd:
         - sudo systemctl restart rsyslog
         - cp /vagrant/my_keys/* ~/.ssh/
