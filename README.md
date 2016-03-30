@@ -61,9 +61,9 @@ You can use the following steps with Vagrant 1.8.1+ and Virtualbox 5.0.16+. You 
 
 1. Download and extract the current AMP Pro release archive and change to the extracted directory:
     ```
-    curl -O http://developers.cloudsoftcorp.com/amp-pro/amp-pro-dist-3.1.0-20160327.1622-dist.tar.gz
-    tar zxf amp-pro-dist-3.1.0-20160327.1622-dist.tar.gz
-    cd cloudsoft-amp-pro-3.1.0-20160327.1622
+    curl -O http://developers.cloudsoftcorp.com/amp-pro/amp-pro-dist-3.1.0-20160330.1541-dist.tar.gz
+    tar zxf amp-pro-dist-3.1.0-20160330.1541-dist.tar.gz
+    cd cloudsoft-amp-pro-3.1.0-20160330.1541
     ```
 
 2. Launch AMP Pro passing the Mesos Cluster, and demo WebSphere Liberty, Wildfly, and Daytrader catalog definitions on startup (this is a very long command as we're pulling in multiple catalogs in a comma seperated list):

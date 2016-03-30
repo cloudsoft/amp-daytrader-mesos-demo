@@ -4,7 +4,7 @@ RUN apk-install openjdk8-jre-base ; \
     apk-install bash ; \
     apk-install curl
 
-ENV AMP_PRO_VERSION 3.1.0-20160327.1622
+ENV AMP_PRO_VERSION 3.1.0-20160330.1541
 ENV brooklyn.webconsole.security.users docker
 ENV brooklyn.webconsole.security.user.docker.password docker
 
